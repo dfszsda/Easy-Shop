@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EasyShoping - Cart</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #E0E5DC; }
+    header { background-color: #333; color: white; padding: 1rem; text-align: center; }
+    .navbar { background-color: #333; padding: 1rem; border-bottom: 1px solid #ddd; }
+    .nav-links { display: flex; justify-content: center; }
+    .nav-links a { color: #d1d5db; padding: 0.5rem 1rem; text-decoration: none; }
+    .nav-links a:hover { color: #111827; }
+    #cart, #confirmed-orders {
+      background: #fff; padding: 1rem; margin: 2rem auto;
+      border: 1px solid #ccc; border-radius: 8px; max-width: 600px;
+    }
+    #cart-items li, #confirmed-orders li { 
+      display: flex; justify-content: space-between; align-items: center; margin: 0.5rem 0; 
+    }
+    #confirm-btn, .download-btn, .clear-btn {
+      background: #007bff; color: white; border: none;
+      padding: 0.5rem 1rem; border-radius: 5px; cursor: pointer; margin-top: 1rem; margin-right: 10px;
+    }
+    .clear-btn { background: #dc3545; }
+    .remove-btn {
+      background: #dc3545; color: white; border: none;
+      padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer;
+    }
+    .remove-btn:hover { background: #c82333; }
+    .hamburger { display: none; cursor: pointer; }
+    .hamburger div { width: 25px; height: 3px; background: white; margin: 5px; }
+    @media (max-width: 640px) {
+      .nav-links { display: none; flex-direction: column; width: 100%; }
+      .nav-links.active { display: flex; }
+      .hamburger { display: block; }
+      #cart, #confirmed-orders { max-width: 100%; }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>EasyShoping</h1>
+    <nav class="navbar">
+      <div class="hamburger" onclick="toggleMenu()" onkeypress="if(event.key === 'Enter') toggleMenu()" role="button" tabindex="0">
+        <div></div><div></div><div></div>
+      </div>
+      <div class="nav-links" id="nav-links">
+        <a href="homepage.html">Home</a>
+        <a href="products.html">Products</a>
+        <a href="cart.html" class="font-bold">Cart</a>
+      </div>
+    </nav>
+  </header>
+
+  <div id="cart">
+    <h2>Cart</h2>
+    <ul id="cart-items"></ul>
+    <button id="confirm-btn" onclick="confirmOrder()">Confirm Order</button>
+  </div>
+
+  <div id="confirmed-orders">
+    <h2>Confirmed Orders</h2>
+    <ul id="confirmed-orders-list"></ul>
+    <div class="mt-4">
+      <button class="download-btn" onclick="downloadAsExcel()">Download Excel</button>
+      <button class="download-btn" onclick="downloadAsPDF()">Download PDF</button>
+      <button class="clear-btn" onclick="clearHistory()">Clear History</button>
+    </div>
+  </div>
+
+<script>
+  let cart = JSON.parse(localStorage.getItem('cart')) || [];
+  let confirmedOrders = JSON.parse(localStorage.getItem('confirmedOrders')) || [];
+
+  function validateCart(cart) {
+    if (!Array.isArray(cart)) return [];
+    return cart.filter(item => 
+      item && typeof item === 'object' &&
+      typeof item.name === 'string' &&
+      typeof item.price === 'number' && item.price >= 0 &&
+      typeof item.quantity === 'number' && item.quantity > 0
+    );
+  }
+
+  function validateConfirmedOrders(orders) {
+    if (!Array.isArray(orders)) return [];
+    return orders.filter(order => 
+      order && typeof order === 'object' &&
+      typeof order.id === 'number' &&
+      Array.isArray(order.items) &&
+      typeof order.total === 'number' &&
+      typeof order.timestamp === 'number' &&
+      validateCart(order.items).length === order.items.length
+    );
+  }
+
+  cart = validateCart(cart);
+  confirmedOrders = validateConfirmedOrders(confirmedOrders);
+  localStorage.setItem('cart', JSON.stringify(cart));
+  localStorage.setItem('confirmedOrders', JSON.stringify(confirmedOrders));
+
+  function generateUniqueId() {
+    const length = Math.random() < 0.5 ? 4 : 6;
+    const min = 10**(length - 1), max = 10**length - 1;
+    return Math.floor(min + Math.random() * (max - min + 1));
+  }
+
+  function changeQuantity(index, delta) {
+    cart[index].quantity += delta;
+    if (cart[index].quantity <= 0) {
+      cart.splice(index, 1);
+    }
+    localStorage.setItem('cart', JSON.stringify(cart));
+    updateCartDisplay();
+  }
+
+  function removeFromCart(index) {
+    cart.splice(index, 1);
+    localStorage.setItem('cart', JSON.stringify(cart));
+    updateCartDisplay();
+  }
+
+  function updateCartDisplay() {
+    const ul = document.getElementById('cart-items');
+    ul.innerHTML = '';
+    if (cart.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'Your cart is empty.';
+      ul.appendChild(li);
+    } else {
+      cart.forEach((item, index) => {
+        const li = document.createElement('li');
+
+        const info = document.createElement('span');
+        info.innerText = `${item.name} – ₹${item.price.toFixed(2)} x ${item.quantity}`;
+
+        const controls = document.createElement('div');
+        controls.className = 'flex gap-2 items-center';
+
+        const minusBtn = document.createElement('button');
+        minusBtn.textContent = '−';
+        minusBtn.className = 'remove-btn';
+        minusBtn.onclick = () => changeQuantity(index, -1);
+
+        const plusBtn = document.createElement('button');
+        plusBtn.textContent = '+';
+        plusBtn.className = 'remove-btn';
+        plusBtn.onclick = () => changeQuantity(index, 1);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = 'Remove';
+        removeBtn.className = 'remove-btn';
+        removeBtn.onclick = () => removeFromCart(index);
+
+        controls.appendChild(minusBtn);
+        controls.appendChild(plusBtn);
+        controls.appendChild(removeBtn);
+
+        li.appendChild(info);
+        li.appendChild(controls);
+        ul.appendChild(li);
+      });
+
+      const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const totalEl = document.createElement('p');
+      totalEl.textContent = `Total: ₹${total.toFixed(2)}`;
+      totalEl.style.fontWeight = 'bold';
+      ul.appendChild(totalEl);
+    }
+  }
+
+  function updateConfirmedOrdersDisplay() {
+    const ul = document.getElementById('confirmed-orders-list');
+    ul.innerHTML = '';
+    if (confirmedOrders.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'No confirmed orders yet.';
+      ul.appendChild(li);
+    } else {
+      confirmedOrders.forEach(order => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <strong>Order ID: ${order.id}</strong><br>
+          Items:<br>
+          ${order.items.map(item => `${item.name} – ₹${item.price.toFixed(2)} x ${item.quantity}`).join('<br>')}<br>
+          Total: ₹${order.total.toFixed(2)}<br>
+          Date: ${new Date(order.timestamp).toLocaleString()}
+        `;
+        ul.appendChild(li);
+      });
+    }
+  }
+
+  function confirmOrder() {
+    if (!cart.length) return alert("Your cart is empty.");
+    const orderId = generateUniqueId();
+    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const order = {
+      id: orderId,
+      items: [...cart],
+      total: total,
+      timestamp: Date.now()
+    };
+    confirmedOrders.push(order);
+    localStorage.setItem('confirmedOrders', JSON.stringify(confirmedOrders));
+
+    alert(`Order Confirmed!\nOrder ID: ${orderId}\nTotal: ₹${total}`);
+    cart = [];
+    localStorage.setItem('cart', JSON.stringify(cart));
+    updateCartDisplay();
+    updateConfirmedOrdersDisplay();
+  }
+
+  function downloadAsExcel() {
+    if (!confirmedOrders.length) return alert("No orders to export.");
+    const rows = confirmedOrders.flatMap(order =>
+      order.items.map(item => ({
+        OrderID: order.id,
+        Item: item.name,
+        Price: item.price,
+        Quantity: item.quantity,
+        Total: item.price * item.quantity,
+        OrderTotal: order.total,
+        Date: new Date(order.timestamp).toLocaleString()
+      }))
+    );
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Confirmed Orders");
+    XLSX.writeFile(wb, "ConfirmedOrders.xlsx");
+  }
+
+  async function downloadAsPDF() {
+    if (!confirmedOrders.length) return alert("No orders to export.");
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    let y = 10;
+
+    confirmedOrders.forEach(order => {
+      doc.text(`Order ID: ${order.id}`, 10, y);
+      y += 6;
+      order.items.forEach(item => {
+        doc.text(`- ${item.name} – ₹${item.price} x ${item.quantity}`, 12, y);
+        y += 6;
+      });
+      doc.text(`Total: ₹${order.total.toFixed(2)}`, 10, y);
+      y += 6;
+      doc.text(`Date: ${new Date(order.timestamp).toLocaleString()}`, 10, y);
+      y += 10;
+    });
+
+    doc.save("ConfirmedOrders.pdf");
+  }
+
+  function clearHistory() {
+    if (confirm("Are you sure you want to clear all confirmed order history?")) {
+      confirmedOrders = [];
+      localStorage.setItem('confirmedOrders', JSON.stringify(confirmedOrders));
+      updateConfirmedOrdersDisplay();
+      alert("History cleared.");
+    }
+  }
+
+  function toggleMenu() {
+    document.getElementById('nav-links').classList.toggle('active');
+  }
+
+  updateCartDisplay();
+  updateConfirmedOrdersDisplay();
+</script>
+</body>
+</html>
